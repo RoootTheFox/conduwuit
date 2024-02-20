@@ -9,6 +9,7 @@ use std::ops::Deref;
 mod axum;
 
 /// Extractor for Ruma request structs
+#[derive(Debug)]
 pub struct Ruma<T> {
     pub body: T,
     pub sender_user: Option<OwnedUserId>,
@@ -17,6 +18,7 @@ pub struct Ruma<T> {
     // This is None when body is not a valid string
     pub json_body: Option<CanonicalJsonValue>,
     pub from_appservice: bool,
+    pub server_name_override: Option<OwnedServerName>,
 }
 
 impl<T> Deref for Ruma<T> {

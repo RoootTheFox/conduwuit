@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
 use crate::{service::pdu::PduBuilder, services, Error, Result, Ruma, RumaResponse};
-use ruma::{
-    api::client::{
-        error::ErrorKind,
-        state::{get_state_events, get_state_events_for_key, send_state_event},
-    },
-    events::{
-        room::canonical_alias::RoomCanonicalAliasEventContent, AnyStateEventContent, StateEventType,
-    },
-    serde::Raw,
-    EventId, RoomId, UserId,
-};
+use ruma::{api::client::{
+    error::ErrorKind,
+    state::{get_state_events, get_state_events_for_key, send_state_event},
+}, events::{
+    room::canonical_alias::RoomCanonicalAliasEventContent, AnyStateEventContent, StateEventType,
+}, serde::Raw, EventId, RoomId, UserId, OwnedServerName};
 use tracing::log::warn;
 
 /// # `PUT /_matrix/client/r0/rooms/{roomId}/state/{eventType}/{stateKey}`
@@ -32,6 +27,7 @@ pub async fn send_state_event_for_key_route(
         &body.event_type,
         &body.body.body, // Yes, I hate it too
         body.state_key.to_owned(),
+        body.server_name_override.clone(),
     )
     .await?;
 
@@ -65,6 +61,7 @@ pub async fn send_state_event_for_empty_key_route(
         &body.event_type.to_string().into(),
         &body.body.body,
         body.state_key.to_owned(),
+        body.server_name_override.clone(),
     )
     .await?;
 
@@ -190,6 +187,7 @@ async fn send_state_event_for_key_helper(
     event_type: &StateEventType,
     json: &Raw<AnyStateEventContent>,
     state_key: String,
+    server_name_override: Option<OwnedServerName>,
 ) -> Result<Arc<EventId>> {
     let sender_user = sender;
 
@@ -205,7 +203,7 @@ async fn send_state_event_for_key_helper(
         }
 
         for alias in aliases {
-            if alias.server_name() != services().globals.server_name()
+            if alias.server_name() != if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }
                 || services()
                     .rooms
                     .alias

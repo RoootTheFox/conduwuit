@@ -64,10 +64,11 @@ pub async fn login_route(body: Ruma<login::v3::Request>) -> Result<login::v3::Re
                 return Err(Error::BadRequest(ErrorKind::Forbidden, "Bad login type."));
             };
             let user_id =
-                UserId::parse_with_server_name(username, services().globals.server_name())
+                UserId::parse_with_server_name(username, if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
                     .map_err(|_| {
                         Error::BadRequest(ErrorKind::InvalidUsername, "Username is invalid.")
                     })?;
+            println!("LOGIN!! -> user_id: {:?}", user_id);
             let hash = services()
                 .users
                 .password_hash(&user_id)?
@@ -75,6 +76,8 @@ pub async fn login_route(body: Ruma<login::v3::Request>) -> Result<login::v3::Re
                     ErrorKind::Forbidden,
                     "Wrong username or password.",
                 ))?;
+
+            println!("LOGIN!! -> hash: {:?}", hash);
 
             if hash.is_empty() {
                 return Err(Error::BadRequest(
@@ -109,7 +112,7 @@ pub async fn login_route(body: Ruma<login::v3::Request>) -> Result<login::v3::Re
                 )
                 .map_err(|_| Error::BadRequest(ErrorKind::InvalidUsername, "Token is invalid."))?;
                 let username = token.claims.sub.to_lowercase();
-                UserId::parse_with_server_name(username, services().globals.server_name()).map_err(
+                UserId::parse_with_server_name(username, if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }).map_err(
                     |_| Error::BadRequest(ErrorKind::InvalidUsername, "Username is invalid."),
                 )?
             } else {
@@ -132,7 +135,7 @@ pub async fn login_route(body: Ruma<login::v3::Request>) -> Result<login::v3::Re
                 return Err(Error::BadRequest(ErrorKind::Forbidden, "Bad login type."));
             };
 
-            UserId::parse_with_server_name(username, services().globals.server_name()).map_err(
+            UserId::parse_with_server_name(username, if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }).map_err(
                 |_| Error::BadRequest(ErrorKind::InvalidUsername, "Username is invalid."),
             )?
         }
@@ -199,7 +202,7 @@ pub async fn login_route(body: Ruma<login::v3::Request>) -> Result<login::v3::Re
             }
         },
         expires_in: None,
-        home_server: Some(services().globals.server_name().to_owned()),
+        home_server: Some(if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.to_owned()),
         refresh_token: None,
     })
 }

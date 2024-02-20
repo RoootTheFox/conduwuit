@@ -113,8 +113,10 @@ pub async fn set_displayname_route(
 pub async fn get_displayname_route(
     body: Ruma<get_display_name::v3::Request>,
 ) -> Result<get_display_name::v3::Response> {
-    if (services().users.exists(&body.user_id)?)
-        && (body.user_id.server_name() != services().globals.server_name())
+    let services_users_exists = services().users.exists(&body.user_id)?;
+    println!("services users exists {} -- server_name_override {:?}  USER id {}", services_users_exists, &body.server_name_override, &body.user_id);
+    if services_users_exists
+        && !services().globals.server_name_is_local(body.user_id.server_name())
     {
         let response = services()
             .sending
@@ -260,9 +262,10 @@ pub async fn set_avatar_url_route(
 pub async fn get_avatar_url_route(
     body: Ruma<get_avatar_url::v3::Request>,
 ) -> Result<get_avatar_url::v3::Response> {
-    if (services().users.exists(&body.user_id)?)
-        && (body.user_id.server_name() != services().globals.server_name())
-    {
+    let services_users_exists = services().users.exists(&body.user_id)?;
+    println!("get_avatar_url_route users exists {} -- server_name_override {:?}  USER id {}", services_users_exists, &body.server_name_override, &body.user_id);
+    if services_users_exists
+        && !services().globals.server_name_is_local(body.user_id.server_name()) {
         let response = services()
             .sending
             .send_federation_request(
@@ -315,9 +318,10 @@ pub async fn get_avatar_url_route(
 pub async fn get_profile_route(
     body: Ruma<get_profile::v3::Request>,
 ) -> Result<get_profile::v3::Response> {
-    if (services().users.exists(&body.user_id)?)
-        && (body.user_id.server_name() != services().globals.server_name())
-    {
+    let services_users_exists = services().users.exists(&body.user_id)?;
+    println!("get_avatar_url_route users exists {} -- server_name_override {:?}  USER id {}", services_users_exists, &body.server_name_override, &body.user_id);
+    if services_users_exists
+        && !services().globals.server_name_is_local(body.user_id.server_name()) {
         let response = services()
             .sending
             .send_federation_request(

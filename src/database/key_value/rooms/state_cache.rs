@@ -107,7 +107,7 @@ impl service::rooms::state_cache::Data for KeyValueDatabase {
 
         for joined in self.room_members(room_id).filter_map(|r| r.ok()) {
             joined_servers.insert(joined.server_name().to_owned());
-            if joined.server_name() == services().globals.server_name()
+            if services().globals.server_name_is_local(joined.server_name())
                 && !services().users.is_deactivated(&joined).unwrap_or(true)
             {
                 real_users.insert(joined);

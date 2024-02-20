@@ -32,14 +32,15 @@ const RANDOM_USER_ID_LENGTH: usize = 10;
 pub async fn get_register_available_route(
     body: Ruma<get_username_availability::v3::Request>,
 ) -> Result<get_username_availability::v3::Response> {
+    println!("register dbg body: {:?}", body);
     // Validate user id
     let user_id = UserId::parse_with_server_name(
         body.username.to_lowercase(),
-        services().globals.server_name(),
+        if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() },
     )
     .ok()
     .filter(|user_id| {
-        !user_id.is_historical() && user_id.server_name() == services().globals.server_name()
+        !user_id.is_historical() && user_id.server_name() == if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }
     })
     .ok_or(Error::BadRequest(
         ErrorKind::InvalidUsername,
@@ -120,12 +121,12 @@ pub async fn register_route(body: Ruma<register::v3::Request>) -> Result<registe
         (Some(username), false) => {
             let proposed_user_id = UserId::parse_with_server_name(
                 username.to_lowercase(),
-                services().globals.server_name(),
+                if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() },
             )
             .ok()
             .filter(|user_id| {
                 !user_id.is_historical()
-                    && user_id.server_name() == services().globals.server_name()
+                    && user_id.server_name() == if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }
             })
             .ok_or(Error::BadRequest(
                 ErrorKind::InvalidUsername,
@@ -155,7 +156,7 @@ pub async fn register_route(body: Ruma<register::v3::Request>) -> Result<registe
         _ => loop {
             let proposed_user_id = UserId::parse_with_server_name(
                 utils::random_string(RANDOM_USER_ID_LENGTH).to_lowercase(),
-                services().globals.server_name(),
+                if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() },
             )
             .unwrap();
             if !services().users.exists(&proposed_user_id)? {
@@ -196,7 +197,7 @@ pub async fn register_route(body: Ruma<register::v3::Request>) -> Result<registe
     if !skip_auth {
         if let Some(auth) = &body.auth {
             let (worked, uiaainfo) = services().uiaa.try_auth(
-                &UserId::parse_with_server_name("", services().globals.server_name())
+                &UserId::parse_with_server_name("", if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
                     .expect("we know this is valid"),
                 "".into(),
                 auth,
@@ -209,7 +210,7 @@ pub async fn register_route(body: Ruma<register::v3::Request>) -> Result<registe
         } else if let Some(json) = body.json_body {
             uiaainfo.session = Some(utils::random_string(SESSION_ID_LENGTH));
             services().uiaa.create(
-                &UserId::parse_with_server_name("", services().globals.server_name())
+                &UserId::parse_with_server_name("", if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
                     .expect("we know this is valid"),
                 "".into(),
                 &uiaainfo,

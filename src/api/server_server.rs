@@ -126,10 +126,11 @@ where
         return Err(Error::bad_config("Federation is disabled."));
     }
 
+    // TODO(MULTI-DOMAIN): figure out what to do with this
     if destination == services().globals.server_name() {
-        return Err(Error::bad_config(
+        /*return Err(Error::bad_config(
             "Won't send federation request to ourselves",
-        ));
+        ));*/
     }
 
     if destination.is_ip_literal() || IPAddress::is_valid(destination.host()) {
@@ -222,7 +223,7 @@ where
     );
     request_map.insert(
         "origin".to_owned(),
-        services().globals.server_name().as_str().into(),
+        services().globals.server_name().as_str().into(), // TODO(MULTI-DOMAIN): figure out what to do with this
     );
     request_map.insert("destination".to_owned(), destination.as_str().into());
 
@@ -230,7 +231,7 @@ where
         serde_json::from_value(request_map.into()).expect("valid JSON is valid BTreeMap");
 
     ruma::signatures::sign_json(
-        services().globals.server_name().as_str(),
+        services().globals.server_name().as_str(), // TODO(MULTI-DOMAIN): figure out what to do with this
         services().globals.keypair(),
         &mut request_json,
     )
@@ -256,7 +257,7 @@ where
                 AUTHORIZATION,
                 HeaderValue::from_str(&format!(
                     "X-Matrix origin={},key=\"{}\",sig=\"{}\"",
-                    services().globals.server_name(),
+                    services().globals.server_name(), // TODO(MULTI-DOMAIN): figure out what to do with this
                     s.0,
                     s.1
                 ))
@@ -640,7 +641,8 @@ pub async fn get_server_version_route(
 /// - Matrix does not support invalidating public keys, so the key returned by this will be valid
 /// forever.
 // Response type for this endpoint is Json because we need to calculate a signature for the response
-pub async fn get_server_keys_route() -> Result<impl IntoResponse> {
+pub async fn get_server_keys_route(_body: Ruma<get_server_keys::v2::Request>) -> Result<get_server_keys::v2::Response> {
+    println!("get_server_keys_route");
     if !services().globals.allow_federation() {
         return Err(Error::bad_config("Federation is disabled."));
     }
@@ -654,10 +656,10 @@ pub async fn get_server_keys_route() -> Result<impl IntoResponse> {
             key: Base64::new(services().globals.keypair().public_key().to_vec()),
         },
     );
-    let mut response = serde_json::from_slice(
-        get_server_keys::v2::Response {
+    //let mut response = serde_json::from_slice(
+        Ok(get_server_keys::v2::Response {
             server_key: Raw::new(&ServerSigningKeys {
-                server_name: services().globals.server_name().to_owned(),
+                server_name: services().globals.server_name().to_owned(), // TODO(MULTI-DOMAIN): figure out what to do with this
                 verify_keys,
                 old_verify_keys: BTreeMap::new(),
                 signatures: BTreeMap::new(),
@@ -667,21 +669,21 @@ pub async fn get_server_keys_route() -> Result<impl IntoResponse> {
                 .expect("time is valid"),
             })
             .expect("static conversion, no errors"),
-        }
-        .try_into_http_response::<Vec<u8>>()
+        })
+     /*   .try_into_http_response::<Vec<u8>>()
         .unwrap()
         .body(),
     )
     .unwrap();
 
     ruma::signatures::sign_json(
-        services().globals.server_name().as_str(),
+        services().globals.server_name().as_str(), // TODO(MULTI-DOMAIN): figure out what to do with this
         services().globals.keypair(),
         &mut response,
     )
     .unwrap();
 
-    Ok(Json(response))
+    Ok(Json(response))*/
 }
 
 /// # `GET /_matrix/key/v2/server/{keyId}`
@@ -690,9 +692,9 @@ pub async fn get_server_keys_route() -> Result<impl IntoResponse> {
 ///
 /// - Matrix does not support invalidating public keys, so the key returned by this will be valid
 /// forever.
-pub async fn get_server_keys_deprecated_route() -> impl IntoResponse {
-    get_server_keys_route().await
-}
+//pub async fn get_server_keys_deprecated_route() -> impl IntoResponse {
+//    get_server_keys_route().await
+//} // TODO(MULTI-DOMAIN): figure out what to do with this
 
 /// # `POST /_matrix/federation/v1/publicRooms`
 ///
@@ -717,6 +719,7 @@ pub async fn get_public_rooms_filtered_route(
         body.since.as_deref(),
         &body.filter,
         &body.room_network,
+        body.server_name_override.clone(),
     )
     .await?;
 
@@ -751,6 +754,7 @@ pub async fn get_public_rooms_route(
         body.since.as_deref(),
         &Filter::default(),
         &RoomNetwork::Matrix,
+        body.server_name_override.clone(),
     )
     .await?;
 
@@ -1154,7 +1158,7 @@ pub async fn get_event_route(
     }
 
     Ok(get_event::v1::Response {
-        origin: services().globals.server_name().to_owned(),
+        origin: if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.to_owned(),
         origin_server_ts: MilliSecondsSinceUnixEpoch::now(),
         pdu: PduEvent::convert_to_outgoing_federation_event(event),
     })
@@ -1231,7 +1235,7 @@ pub async fn get_backfill_route(
         .collect();
 
     Ok(get_backfill::v1::Response {
-        origin: services().globals.server_name().to_owned(),
+        origin: if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.to_owned(),
         origin_server_ts: MilliSecondsSinceUnixEpoch::now(),
         pdus: events,
     })
@@ -1769,7 +1773,7 @@ async fn create_join_event(
         .state_cache
         .room_servers(room_id)
         .filter_map(|r| r.ok())
-        .filter(|server| &**server != services().globals.server_name());
+        .filter(|server| &**server != services().globals.server_name()); // TODO(MULTI-DOMAIN): figure out what to do with this
 
     services().sending.send_pdu(servers, &pdu_id)?;
 
@@ -1869,7 +1873,7 @@ pub async fn create_invite_route(
     })?;
 
     ruma::signatures::hash_and_sign_event(
-        services().globals.server_name().as_str(),
+        if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str(),
         services().globals.keypair(),
         &mut signed_event,
         &body.room_version,
@@ -1932,7 +1936,7 @@ pub async fn create_invite_route(
     if !services()
         .rooms
         .state_cache
-        .server_in_room(services().globals.server_name(), &body.room_id)?
+        .server_in_room(if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }, &body.room_id)?
     {
         services()
             .rooms
@@ -2028,7 +2032,7 @@ pub async fn get_room_information_route(
 
     Ok(get_room_information::v1::Response {
         room_id,
-        servers: vec![services().globals.server_name().to_owned()],
+        servers: vec![if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.to_owned()],
     })
 }
 
@@ -2042,7 +2046,7 @@ pub async fn get_profile_information_route(
         return Err(Error::bad_config("Federation is disabled."));
     }
 
-    if body.user_id.server_name() != services().globals.server_name() {
+    if body.user_id.server_name() != if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() } {
         return Err(Error::BadRequest(
             ErrorKind::NotFound,
             "User does not belong to this server",
@@ -2110,7 +2114,7 @@ pub async fn claim_keys_route(
         return Err(Error::bad_config("Federation is disabled."));
     }
 
-    let result = claim_keys_helper(&body.one_time_keys).await?;
+    let result = claim_keys_helper(&body.one_time_keys, body.server_name_override.clone()).await?;
 
     Ok(claim_keys::v1::Response {
         one_time_keys: result.one_time_keys,

@@ -1,31 +1,26 @@
 use crate::{services, Error, Result, Ruma};
-use ruma::{
-    api::{
-        client::{
-            directory::{
-                get_public_rooms, get_public_rooms_filtered, get_room_visibility,
-                set_room_visibility,
-            },
-            error::ErrorKind,
-            room,
+use ruma::{api::{
+    client::{
+        directory::{
+            get_public_rooms, get_public_rooms_filtered, get_room_visibility,
+            set_room_visibility,
         },
-        federation,
+        error::ErrorKind,
+        room,
     },
-    directory::{Filter, PublicRoomJoinRule, PublicRoomsChunk, RoomNetwork},
-    events::{
-        room::{
-            avatar::RoomAvatarEventContent,
-            canonical_alias::RoomCanonicalAliasEventContent,
-            create::RoomCreateEventContent,
-            guest_access::{GuestAccess, RoomGuestAccessEventContent},
-            history_visibility::{HistoryVisibility, RoomHistoryVisibilityEventContent},
-            join_rules::{JoinRule, RoomJoinRulesEventContent},
-            topic::RoomTopicEventContent,
-        },
-        StateEventType,
+    federation,
+}, directory::{Filter, PublicRoomJoinRule, PublicRoomsChunk, RoomNetwork}, events::{
+    room::{
+        avatar::RoomAvatarEventContent,
+        canonical_alias::RoomCanonicalAliasEventContent,
+        create::RoomCreateEventContent,
+        guest_access::{GuestAccess, RoomGuestAccessEventContent},
+        history_visibility::{HistoryVisibility, RoomHistoryVisibilityEventContent},
+        join_rules::{JoinRule, RoomJoinRulesEventContent},
+        topic::RoomTopicEventContent,
     },
-    ServerName, UInt,
-};
+    StateEventType,
+}, OwnedServerName, ServerName, UInt};
 use tracing::{error, info, warn};
 
 /// # `POST /_matrix/client/v3/publicRooms`
@@ -50,6 +45,7 @@ pub async fn get_public_rooms_filtered_route(
         body.since.as_deref(),
         &body.filter,
         &body.room_network,
+        body.server_name_override.clone(),
     )
     .await
 }
@@ -76,6 +72,7 @@ pub async fn get_public_rooms_route(
         body.since.as_deref(),
         &Filter::default(),
         &RoomNetwork::Matrix,
+        body.server_name_override.clone(),
     )
     .await?;
 
@@ -145,9 +142,10 @@ pub(crate) async fn get_public_rooms_filtered_helper(
     since: Option<&str>,
     filter: &Filter,
     _network: &RoomNetwork,
+    server_name_override: Option<OwnedServerName>,
 ) -> Result<get_public_rooms_filtered::v3::Response> {
     if let Some(other_server) =
-        server.filter(|server| *server != services().globals.server_name().as_str())
+        server.filter(|server| *server != if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str())
     {
         let response = services()
             .sending

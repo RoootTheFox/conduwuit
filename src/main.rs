@@ -539,14 +539,11 @@ fn routes() -> Router {
         .ruma_route(client_server::get_relating_events_route)
         .ruma_route(client_server::get_hierarchy_route)
         .ruma_route(server_server::get_server_version_route)
-        .route(
-            "/_matrix/key/v2/server",
-            get(server_server::get_server_keys_route),
-        )
-        .route(
+        .ruma_route(server_server::get_server_keys_route)
+        /*.route(
             "/_matrix/key/v2/server/:key_id",
             get(server_server::get_server_keys_deprecated_route),
-        )
+        )*/
         .ruma_route(server_server::get_public_rooms_route)
         .ruma_route(server_server::get_public_rooms_filtered_route)
         .ruma_route(server_server::send_transaction_message_route)

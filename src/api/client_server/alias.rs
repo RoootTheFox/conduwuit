@@ -19,7 +19,7 @@ use ruma::{
 pub async fn create_alias_route(
     body: Ruma<create_alias::v3::Request>,
 ) -> Result<create_alias::v3::Response> {
-    if body.room_alias.server_name() != services().globals.server_name() {
+    if body.room_alias.server_name() != if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() } {
         return Err(Error::BadRequest(
             ErrorKind::InvalidParam,
             "Alias is from another server.",
@@ -70,7 +70,7 @@ pub async fn create_alias_route(
 pub async fn delete_alias_route(
     body: Ruma<delete_alias::v3::Request>,
 ) -> Result<delete_alias::v3::Response> {
-    if body.room_alias.server_name() != services().globals.server_name() {
+    if body.room_alias.server_name() != if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() } {
         return Err(Error::BadRequest(
             ErrorKind::InvalidParam,
             "Alias is from another server.",
@@ -112,13 +112,14 @@ pub async fn delete_alias_route(
 pub async fn get_alias_route(
     body: Ruma<get_alias::v3::Request>,
 ) -> Result<get_alias::v3::Response> {
-    get_alias_helper(body.body.room_alias).await
+    get_alias_helper(body.body.room_alias, body.server_name_override).await
 }
 
 pub(crate) async fn get_alias_helper(
     room_alias: OwnedRoomAliasId,
+    server_name_override: Option<OwnedServerName>,
 ) -> Result<get_alias::v3::Response> {
-    if room_alias.server_name() != services().globals.server_name() {
+    if room_alias.server_name() != if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() } {
         let response = services()
             .sending
             .send_federation_request(
@@ -147,10 +148,10 @@ pub(crate) async fn get_alias_helper(
         if let Some(server_index) = servers
             .clone()
             .into_iter()
-            .position(|server| server == services().globals.server_name())
+            .position(|server| server == if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
         {
             servers.remove(server_index);
-            servers.insert(0, services().globals.server_name().to_owned());
+            servers.insert(0, if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.to_owned());
         }
 
         servers.sort_unstable();
@@ -233,10 +234,10 @@ pub(crate) async fn get_alias_helper(
     if let Some(server_index) = servers
         .clone()
         .into_iter()
-        .position(|server| server == services().globals.server_name())
+        .position(|server| server == if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
     {
         servers.remove(server_index);
-        servers.insert(0, services().globals.server_name().to_owned());
+        servers.insert(0, if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.to_owned());
     }
 
     servers.sort_unstable();

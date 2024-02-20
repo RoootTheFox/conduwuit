@@ -72,6 +72,7 @@ pub async fn join_room_by_id_route(
         body.reason.clone(),
         &servers,
         body.third_party_signed.as_ref(),
+        body.server_name_override.clone(),
     )
     .await
 }
@@ -86,6 +87,7 @@ pub async fn join_room_by_id_or_alias_route(
     body: Ruma<join_room_by_id_or_alias::v3::Request>,
 ) -> Result<join_room_by_id_or_alias::v3::Response> {
     let sender_user = body.sender_user.as_deref().expect("user is authenticated");
+    let server_name_override = body.server_name_override;
     let body = body.body;
 
     let (servers, room_id) = match OwnedRoomId::try_from(body.room_id_or_alias) {
@@ -110,7 +112,7 @@ pub async fn join_room_by_id_or_alias_route(
             (servers, room_id)
         }
         Err(room_alias) => {
-            let response = get_alias_helper(room_alias).await?;
+            let response = get_alias_helper(room_alias, server_name_override.clone()).await?;
 
             (response.servers, response.room_id)
         }
@@ -122,6 +124,7 @@ pub async fn join_room_by_id_or_alias_route(
         body.reason.clone(),
         &servers,
         body.third_party_signed.as_ref(),
+        server_name_override,
     )
     .await?;
 
@@ -140,7 +143,7 @@ pub async fn leave_room_route(
 ) -> Result<leave_room::v3::Response> {
     let sender_user = body.sender_user.as_ref().expect("user is authenticated");
 
-    leave_room(sender_user, &body.room_id, body.reason.clone()).await?;
+    leave_room(sender_user, &body.room_id, body.reason.clone(), body.server_name_override.clone()).await?;
 
     Ok(leave_room::v3::Response::new())
 }
@@ -160,6 +163,7 @@ pub async fn invite_user_route(
             &body.room_id,
             body.reason.clone(),
             false,
+            body.server_name_override.clone(),
         )
         .await?;
         Ok(invite_user::v3::Response {})
@@ -493,6 +497,7 @@ async fn join_room_by_id_helper(
     reason: Option<String>,
     servers: &[OwnedServerName],
     _third_party_signed: Option<&ThirdPartySigned>,
+    server_name_override: Option<OwnedServerName>,
 ) -> Result<join_room_by_id::v3::Response> {
     let sender_user = sender_user.expect("user is authenticated");
 
@@ -511,8 +516,9 @@ async fn join_room_by_id_helper(
     if !services()
         .rooms
         .state_cache
-        .server_in_room(services().globals.server_name(), room_id)?
+        .server_in_room(if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }, room_id)? // TODO(MULTI-DOMAIN) CHECK IF THIS WORKS!!
     {
+        println!("Joining {room_id} over federation.");
         info!("Joining {room_id} over federation.");
 
         let (make_join_response, remote_server) =
@@ -549,7 +555,7 @@ async fn join_room_by_id_helper(
         // TODO: Is origin needed?
         join_event_stub.insert(
             "origin".to_owned(),
-            CanonicalJsonValue::String(services().globals.server_name().as_str().to_owned()),
+            CanonicalJsonValue::String(if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str().to_owned()),
         );
         join_event_stub.insert(
             "origin_server_ts".to_owned(),
@@ -579,7 +585,7 @@ async fn join_room_by_id_helper(
 
         // In order to create a compatible ref hash (EventID) the `hashes` field needs to be present
         ruma::signatures::hash_and_sign_event(
-            services().globals.server_name().as_str(),
+            if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str(),
             services().globals.keypair(),
             &mut join_event_stub,
             &room_version_id,
@@ -604,6 +610,7 @@ async fn join_room_by_id_helper(
         // It has enough fields to be called a proper event now
         let mut join_event = join_event_stub;
 
+        info!("Asking {remote_server} for send_join in room {room_id}");
         info!("Asking {remote_server} for send_join in room {room_id}");
         let send_join_response = services()
             .sending
@@ -908,7 +915,7 @@ async fn join_room_by_id_helper(
                         c.users
                             .iter()
                             .filter(|(uid, i)| {
-                                uid.server_name() == services().globals.server_name()
+                                uid.server_name() == if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }
                                     && **i > ruma::int!(0)
                                     && services()
                                         .rooms
@@ -927,7 +934,7 @@ async fn join_room_by_id_helper(
                             .state_cache
                             .room_members(restriction_room_id)
                             .filter_map(|r| r.ok())
-                            .find(|uid| uid.server_name() == services().globals.server_name())
+                            .find(|uid| uid.server_name() == if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
                     });
                 Some(authorized_user)
             })
@@ -969,7 +976,7 @@ async fn join_room_by_id_helper(
         if !restriction_rooms.is_empty()
             && servers
                 .iter()
-                .filter(|s| *s != services().globals.server_name())
+                .filter(|s| *s != if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
                 .count()
                 > 0
         {
@@ -1005,7 +1012,7 @@ async fn join_room_by_id_helper(
             // TODO: Is origin needed?
             join_event_stub.insert(
                 "origin".to_owned(),
-                CanonicalJsonValue::String(services().globals.server_name().as_str().to_owned()),
+                CanonicalJsonValue::String(if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str().to_owned()),
             );
             join_event_stub.insert(
                 "origin_server_ts".to_owned(),
@@ -1035,7 +1042,7 @@ async fn join_room_by_id_helper(
 
             // In order to create a compatible ref hash (EventID) the `hashes` field needs to be present
             ruma::signatures::hash_and_sign_event(
-                services().globals.server_name().as_str(),
+                if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str(),
                 services().globals.keypair(),
                 &mut join_event_stub,
                 &room_version_id,
@@ -1060,6 +1067,7 @@ async fn join_room_by_id_helper(
             // It has enough fields to be called a proper event now
             let join_event = join_event_stub;
 
+            println!("membership.rs l1069 send join request");
             let send_join_response = services()
                 .sending
                 .send_federation_request(
@@ -1136,10 +1144,11 @@ async fn make_join_request(
     ));
 
     for remote_server in servers {
-        if remote_server == services().globals.server_name() {
+        if services().globals.server_name_is_local(remote_server) {
             continue;
         }
         info!("Asking {remote_server} for make_join");
+        println!("Asking {remote_server} for make_join");
         let make_join_response = services()
             .sending
             .send_federation_request(
@@ -1236,8 +1245,11 @@ pub(crate) async fn invite_helper(
     room_id: &RoomId,
     reason: Option<String>,
     is_direct: bool,
+    server_name_override: Option<OwnedServerName>,
 ) -> Result<()> {
-    if user_id.server_name() != services().globals.server_name() {
+    println!("membership.rs user id: {:?} server name: {:?} server name override: {:?}", user_id, user_id.server_name(), server_name_override);
+    if !services().globals.server_name_is_local(user_id.server_name()) {
+        println!("membership.rs l1252 federation invite");
         let (pdu, pdu_json, invite_room_state) = {
             let mutex_state = Arc::clone(
                 services()
@@ -1284,6 +1296,7 @@ pub(crate) async fn invite_helper(
 
         let room_version_id = services().rooms.state.get_room_version(room_id)?;
 
+        println!("membership.rs l1297 send federation request");
         let response = services()
             .sending
             .send_federation_request(
@@ -1348,8 +1361,9 @@ pub(crate) async fn invite_helper(
             .state_cache
             .room_servers(room_id)
             .filter_map(|r| r.ok())
-            .filter(|server| &**server != services().globals.server_name());
+            .filter(|server| &**server != if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() });
 
+        println!("Sending invite to server ?? pdu id: {:?}", pdu_id);
         services().sending.send_pdu(servers, &pdu_id)?;
 
         return Ok(());
@@ -1430,18 +1444,18 @@ pub async fn leave_all_rooms(user_id: &UserId) -> Result<()> {
             Err(_) => continue,
         };
 
-        let _ = leave_room(user_id, &room_id, None).await;
+        let _ = leave_room(user_id, &room_id, None, None).await; // TODO(MULTI-DOMAIN): FIX THIS!!!
     }
 
     Ok(())
 }
 
-pub async fn leave_room(user_id: &UserId, room_id: &RoomId, reason: Option<String>) -> Result<()> {
+pub async fn leave_room(user_id: &UserId, room_id: &RoomId, reason: Option<String>, server_name_override: Option<OwnedServerName>) -> Result<()> {
     // Ask a remote server if we don't have this room
     if !services().rooms.metadata.exists(room_id)?
-        && room_id.server_name() != Some(services().globals.server_name())
+        && room_id.server_name() != Some(if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
     {
-        if let Err(e) = remote_leave_room(user_id, room_id).await {
+        if let Err(e) = remote_leave_room(user_id, room_id, server_name_override).await {
             warn!("Failed to leave room {} remotely: {}", user_id, e);
             // Don't tell the client about this error
         }
@@ -1538,7 +1552,7 @@ pub async fn leave_room(user_id: &UserId, room_id: &RoomId, reason: Option<Strin
     Ok(())
 }
 
-async fn remote_leave_room(user_id: &UserId, room_id: &RoomId) -> Result<()> {
+async fn remote_leave_room(user_id: &UserId, room_id: &RoomId, server_name_override: Option<OwnedServerName>) -> Result<()> {
     let mut make_leave_response_and_server = Err(Error::BadServerResponse(
         "No server available to assist in leaving.",
     ));
@@ -1561,6 +1575,7 @@ async fn remote_leave_room(user_id: &UserId, room_id: &RoomId) -> Result<()> {
         .map(|user| user.server_name().to_owned())
         .collect();
 
+    println!("membership.rs l1576 remote_leave_room");
     for remote_server in servers {
         let make_leave_response = services()
             .sending
@@ -1602,7 +1617,7 @@ async fn remote_leave_room(user_id: &UserId, room_id: &RoomId) -> Result<()> {
     // TODO: Is origin needed?
     leave_event_stub.insert(
         "origin".to_owned(),
-        CanonicalJsonValue::String(services().globals.server_name().as_str().to_owned()),
+        CanonicalJsonValue::String(if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str().to_owned()),
     );
     leave_event_stub.insert(
         "origin_server_ts".to_owned(),
@@ -1617,7 +1632,7 @@ async fn remote_leave_room(user_id: &UserId, room_id: &RoomId) -> Result<()> {
 
     // In order to create a compatible ref hash (EventID) the `hashes` field needs to be present
     ruma::signatures::hash_and_sign_event(
-        services().globals.server_name().as_str(),
+        if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str(),
         services().globals.keypair(),
         &mut leave_event_stub,
         &room_version_id,
@@ -1641,6 +1656,7 @@ async fn remote_leave_room(user_id: &UserId, room_id: &RoomId) -> Result<()> {
     // It has enough fields to be called a proper event now
     let leave_event = leave_event_stub;
 
+    println!("membership.rs l1657 send federation request");
     services()
         .sending
         .send_federation_request(

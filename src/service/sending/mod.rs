@@ -492,6 +492,7 @@ impl Service {
         kind: OutgoingKind,
         events: Vec<SendingEventType>,
     ) -> Result<OutgoingKind, (OutgoingKind, Error)> {
+        println!("handle_events kind: {:?}\nevents: {:?}", kind, events);
         match &kind {
             OutgoingKind::Appservice(id) => {
                 let mut pdu_jsons = Vec::new();
@@ -674,6 +675,7 @@ impl Service {
 
                 let permit = services().sending.maximum_requests.acquire().await;
 
+                println!("service sending mod l678 send_request");
                 let response = server_server::send_request(
                     server,
                     send_transaction_message::v1::Request {

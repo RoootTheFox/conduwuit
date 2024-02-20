@@ -1,21 +1,17 @@
 use super::SESSION_ID_LENGTH;
 use crate::{services, utils, Error, Result, Ruma};
 use futures_util::{stream::FuturesUnordered, StreamExt};
-use ruma::{
-    api::{
-        client::{
-            error::ErrorKind,
-            keys::{
-                claim_keys, get_key_changes, get_keys, upload_keys, upload_signatures,
-                upload_signing_keys,
-            },
-            uiaa::{AuthFlow, AuthType, UiaaInfo},
+use ruma::{api::{
+    client::{
+        error::ErrorKind,
+        keys::{
+            claim_keys, get_key_changes, get_keys, upload_keys, upload_signatures,
+            upload_signing_keys,
         },
-        federation,
+        uiaa::{AuthFlow, AuthType, UiaaInfo},
     },
-    serde::Raw,
-    DeviceKeyAlgorithm, OwnedDeviceId, OwnedUserId, UserId,
-};
+    federation,
+}, serde::Raw, DeviceKeyAlgorithm, OwnedDeviceId, OwnedUserId, UserId, OwnedServerName};
 use serde_json::json;
 use std::{
     collections::{hash_map, BTreeMap, HashMap, HashSet},
@@ -89,7 +85,7 @@ pub async fn get_keys_route(body: Ruma<get_keys::v3::Request>) -> Result<get_key
 pub async fn claim_keys_route(
     body: Ruma<claim_keys::v3::Request>,
 ) -> Result<claim_keys::v3::Response> {
-    let response = claim_keys_helper(&body.one_time_keys).await?;
+    let response = claim_keys_helper(&body.one_time_keys, body.server_name_override.clone()).await?;
 
     Ok(response)
 }
@@ -276,7 +272,8 @@ pub(crate) async fn get_keys_helper<F: Fn(&UserId) -> bool>(
     for (user_id, device_ids) in device_keys_input {
         let user_id: &UserId = user_id;
 
-        if user_id.server_name() != services().globals.server_name() {
+        println!("get_keys_helper: user_id server name: {}", user_id.server_name());
+        if !services().globals.server_name_is_local(user_id.server_name()) {
             get_over_federation
                 .entry(user_id.server_name())
                 .or_insert_with(Vec::new)
@@ -481,13 +478,14 @@ fn add_unsigned_device_display_name(
 
 pub(crate) async fn claim_keys_helper(
     one_time_keys_input: &BTreeMap<OwnedUserId, BTreeMap<OwnedDeviceId, DeviceKeyAlgorithm>>,
+    server_name_override: Option<OwnedServerName>,
 ) -> Result<claim_keys::v3::Response> {
     let mut one_time_keys = BTreeMap::new();
 
     let mut get_over_federation = BTreeMap::new();
 
     for (user_id, map) in one_time_keys_input {
-        if user_id.server_name() != services().globals.server_name() {
+        if user_id.server_name() != if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() } {
             get_over_federation
                 .entry(user_id.server_name())
                 .or_insert_with(Vec::new)

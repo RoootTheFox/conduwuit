@@ -304,6 +304,24 @@ impl Service<'_> {
         self.config.server_name.as_ref()
     }
 
+    pub fn server_name_is_local(&self, server_name: &ServerName) -> bool {
+        if server_name.as_str() == self.server_name().as_str() {
+            return true;
+        }
+
+        let x = self.config.additional_domains.iter().any(|d| d.as_str() == server_name.as_str());
+        println!("server_name_is_local: {} {}", server_name.as_str(), x);
+        x
+    }
+
+    pub fn get_server_name_by_string(&self, domain: &str) -> Option<&ServerName> {
+        if self.server_name().as_str() == domain {
+            Some(self.server_name())
+        } else {
+            self.config.additional_domains.iter().find(|d| d.as_str() == domain).map(|d| d.as_ref())
+        }
+    }
+
     pub fn max_request_size(&self) -> u32 {
         self.config.max_request_size
     }

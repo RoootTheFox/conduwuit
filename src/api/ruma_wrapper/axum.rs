@@ -1,4 +1,5 @@
 use std::{collections::BTreeMap, iter::FromIterator, str};
+use std::str::FromStr;
 
 use axum::{
     async_trait,
@@ -40,6 +41,8 @@ where
     type Rejection = Error;
 
     async fn from_request(req: Request<B>, _state: &S) -> Result<Self, Self::Rejection> {
+        println!("req uri: {:?} headers: {:?}", &req.uri(), &req.headers());
+
         let (mut parts, mut body) = match req.with_limited_body() {
             Ok(limited_req) => {
                 let (parts, body) = limited_req.into_parts();
@@ -60,6 +63,22 @@ where
         let metadata = T::METADATA;
         let auth_header: Option<TypedHeader<Authorization<Bearer>>> = parts.extract().await?;
         let path_params: Path<Vec<String>> = parts.extract().await?;
+
+        let server_name_override: Option<OwnedServerName> = parts.headers.iter().filter_map(|(name, value)| {
+            if name == "x-conduit-servername-override" {
+                let value = value.to_str().ok().map(|s| s.to_owned());
+                if let Some(value) = value {
+                    OwnedServerName::from_str(&value).ok()
+                } else {
+                    // todo: log error
+                    None
+                }
+            } else {
+                None
+            }
+        }).next();
+
+        println!("server_name_override: {:?}", server_name_override);
 
         let query = parts.uri.query().unwrap_or_default();
         let query_params: QueryParams = match serde_html_form::from_str(query) {
@@ -93,7 +112,7 @@ where
                             || {
                                 UserId::parse_with_server_name(
                                     registration.sender_localpart.as_str(),
-                                    services().globals.server_name(),
+                                    if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() },
                                 )
                                 .unwrap()
                             },
@@ -172,7 +191,7 @@ where
                         )]);
 
                         let server_destination =
-                            services().globals.server_name().as_str().to_owned();
+                            if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_str().to_owned();
 
                         if let Some(destination) = x_matrix.destination.as_ref() {
                             if destination != &server_destination {
@@ -302,7 +321,7 @@ where
 
         if let Some(CanonicalJsonValue::Object(json_body)) = &mut json_body {
             let user_id = sender_user.clone().unwrap_or_else(|| {
-                UserId::parse_with_server_name("", services().globals.server_name())
+                UserId::parse_with_server_name("", if server_name_override.is_some() { server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
                     .expect("we know this is valid")
             });
 
@@ -347,6 +366,7 @@ where
             sender_servername,
             from_appservice,
             json_body,
+            server_name_override: server_name_override,
         })
     }
 }

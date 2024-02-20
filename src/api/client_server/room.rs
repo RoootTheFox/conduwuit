@@ -105,7 +105,7 @@ pub async fn create_room_route(
                 let full_room_id = "!".to_owned()
                     + &custom_room_id_s.replace('"', "")
                     + ":"
-                    + services().globals.server_name().as_ref();
+                    + if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }.as_ref();
                 debug!("Full room ID: {}", full_room_id);
 
                 room_id = RoomId::parse(full_room_id).map_err(|e| {
@@ -119,10 +119,10 @@ pub async fn create_room_route(
                     )
                 })?;
             }
-            None => room_id = RoomId::new(services().globals.server_name()),
+            None => room_id = RoomId::new(if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }),
         }
     } else {
-        room_id = RoomId::new(services().globals.server_name())
+        room_id = RoomId::new(if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() })
     }
 
     // check if room ID doesn't already exist instead of erroring on auth check
@@ -193,7 +193,7 @@ pub async fn create_room_route(
                 let alias = RoomAliasId::parse(format!(
                     "#{}:{}",
                     localpart,
-                    services().globals.server_name()
+                    if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() }
                 ))
                 .map_err(|e| {
                     warn!("Failed to parse room alias for room ID {}: {e}", room_id);
@@ -591,7 +591,7 @@ pub async fn create_room_route(
     // 8. Events implied by invite (and TODO: invite_3pid)
     drop(state_lock);
     for user_id in &body.invite {
-        let _ = invite_helper(sender_user, user_id, &room_id, None, body.is_direct).await;
+        let _ = invite_helper(sender_user, user_id, &room_id, None, body.is_direct, body.server_name_override.clone()).await;
     }
 
     // Homeserver specific stuff
@@ -704,7 +704,7 @@ pub async fn upgrade_room_route(
     }
 
     // Create a replacement room
-    let replacement_room = RoomId::new(services().globals.server_name());
+    let replacement_room = RoomId::new(if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() });
     services()
         .rooms
         .short

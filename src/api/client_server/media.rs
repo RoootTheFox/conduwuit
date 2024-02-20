@@ -79,7 +79,7 @@ pub async fn create_content_route(
 ) -> Result<create_content::v3::Response> {
     let mxc = format!(
         "mxc://{}/{}",
-        services().globals.server_name(),
+        if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() },
         utils::random_string(MXC_LENGTH)
     );
 
@@ -174,7 +174,7 @@ pub async fn get_content_route(
             content_disposition,
             cross_origin_resource_policy: Some("cross-origin".to_owned()),
         })
-    } else if &*body.server_name != services().globals.server_name() && body.allow_remote {
+    } else if &*body.server_name != if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() } && body.allow_remote {
         let remote_content_response = get_remote_content(
             &mxc,
             &body.server_name,
@@ -211,7 +211,7 @@ pub async fn get_content_as_filename_route(
             content_disposition: Some(format!("inline; filename={}", body.filename)),
             cross_origin_resource_policy: Some("cross-origin".to_owned()),
         })
-    } else if &*body.server_name != services().globals.server_name() && body.allow_remote {
+    } else if &*body.server_name != if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() } && body.allow_remote {
         let remote_content_response = get_remote_content(
             &mxc,
             &body.server_name,
@@ -264,7 +264,7 @@ pub async fn get_content_thumbnail_route(
             content_type,
             cross_origin_resource_policy: Some("cross-origin".to_owned()),
         })
-    } else if &*body.server_name != services().globals.server_name() && body.allow_remote {
+    } else if &*body.server_name != if body.server_name_override.is_some() { body.server_name_override.as_ref().unwrap() } else { services().globals.server_name() } && body.allow_remote {
         // we'll lie to the client and say the blocked server's media was not found and log.
         // the client has no way of telling anyways so this is a security bonus.
         if services()
@@ -315,7 +315,7 @@ async fn download_image(client: &reqwest::Client, url: &str) -> Result<UrlPrevie
     let image = client.get(url).send().await?.bytes().await?;
     let mxc = format!(
         "mxc://{}/{}",
-        services().globals.server_name(),
+        services().globals.server_name(), // TODO(MULTI-DOMAIN): figure out how to handle this
         utils::random_string(MXC_LENGTH)
     );
 

@@ -263,7 +263,22 @@ impl Service {
 
     #[tracing::instrument(skip(self))]
     pub fn server_in_room<'a>(&'a self, server: &ServerName, room_id: &RoomId) -> Result<bool> {
-        self.db.server_in_room(server, room_id)
+        if services().globals.server_name_is_local(server) {
+            println!("server_in_room: server {server} is local");
+
+            if services().globals.server_name_is_local(room_id.server_name().unwrap()) {
+                println!("server_in_room: room {room_id} is local");
+                let x = self.db.server_in_room(services().globals.server_name(), room_id)?;
+                println!("server_in_room DBG: {x}");
+                return Ok(true);
+            }
+        } else {
+            println!("server_in_room: server {server} is remote");
+        }
+
+        let res = self.db.server_in_room(server, room_id);
+        println!("server_in_room: res = {:?}", res);
+        res
     }
 
     /// Returns an iterator of all rooms a server participates in (as far as we know).

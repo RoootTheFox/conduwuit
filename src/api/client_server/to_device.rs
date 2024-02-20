@@ -29,7 +29,8 @@ pub async fn send_event_to_device_route(
 
     for (target_user_id, map) in &body.messages {
         for (target_device_id_maybe, event) in map {
-            if target_user_id.server_name() != services().globals.server_name() {
+            println!("to_device: {:?} -- target_user_id server name: {} -- override {:?}", event, target_user_id.server_name(), &body.server_name_override);
+            if !services().globals.server_name_is_local(target_user_id.server_name()) {
                 let mut map = BTreeMap::new();
                 map.insert(target_device_id_maybe.clone(), event.clone());
                 let mut messages = BTreeMap::new();

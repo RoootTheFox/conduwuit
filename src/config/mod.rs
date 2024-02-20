@@ -31,6 +31,7 @@ pub struct Config {
     #[serde(default = "default_unix_socket_perms")]
     pub unix_socket_perms: u32,
     pub server_name: OwnedServerName,
+    pub additional_domains: Vec<OwnedServerName>,
     #[serde(default = "default_database_backend")]
     pub database_backend: String,
     pub database_path: String,
